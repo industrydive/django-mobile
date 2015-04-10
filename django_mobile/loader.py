@@ -1,24 +1,40 @@
 import hashlib
 from django.template import TemplateDoesNotExist
-from django.template.loader import find_template_loader, BaseLoader
-from django.template.loader import get_template_from_string
+from django.template.loaders.base import Loader as BaseLoader
 from django.template.loaders.cached import Loader as DjangoCachedLoader
 from django_mobile import get_flavour
 from django_mobile.conf import settings
 from django.utils.encoding import force_bytes
 
+# THIS IS DANGEROUS
+# Creates a temporary engine if there is more than one
+# BAD BAD BAD
+def _get_engine():
+    from django.template.engine import Engine
+    try:
+        engine = Engine.get_default()
+    except:
+        engine = Engine()
+
+    return engine
+
 
 class Loader(BaseLoader):
     is_usable = True
 
-    def __init__(self, *args, **kwargs):
-        loaders = []
+    def __init__(self, engine=None, loaders=None):
+        if not engine:
+            engine = _get_engine
+
+        super(Loader, self).__init__(engine)
+
+        if not loaders:
+            loaders = []
         for loader_name in settings.FLAVOURS_TEMPLATE_LOADERS:
-            loader = find_template_loader(loader_name)
+            loader = engine.find_template_loader(loader_name)
             if loader is not None:
                 loaders.append(loader)
         self.template_source_loaders = tuple(loaders)
-        super(BaseLoader, self).__init__(*args, **kwargs)
 
     def get_template_sources(self, template_name, template_dirs=None):
         template_name = self.prepare_template_name(template_name)
@@ -90,7 +106,7 @@ class CachedLoader(DjangoCachedLoader):
             template, origin = self.find_template(template_name, template_dirs)
             if not hasattr(template, 'render'):
                 try:
-                    template = get_template_from_string(template, origin, template_name)
+                    template = self.engine.get_template_from_string(template, origin, template_name)
                 except TemplateDoesNotExist:
                     # If compiling the template we found raises TemplateDoesNotExist,
                     # back off to returning the source and display name for the template
